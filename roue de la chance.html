@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Roue de la fortune</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background: linear-gradient(to right, #f9f9f9, #e0e0e0);
+      font-family: Arial, sans-serif;
+    }
+    .wheel-container {
+      position: relative;
+    }
+    canvas {
+      border: 8px solid #333;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 0 20px rgba(0,0,0,0.3);
+    }
+    .pointer {
+      position: absolute;
+      top: 50%;
+      left: 0%;
+      transform: translate(-50%, 0%) rotate(0deg);
+      width: 0;
+      height: 0;
+      border-top: 20px solid transparent;
+      border-bottom: 20px solid transparent;
+      border-right: 30px solid red;
+      z-index: 10;
+      animation: pulse 0.6s infinite alternate ease-in-out;
+    }
+    @keyframes pulse {
+      0% { transform: translate(-50%, -50%) rotate(0deg) scale(1); }
+      100% { transform: translate(-50%, -50%) rotate(0deg) scale(1.5); }
+    }
+    button {
+      margin-top: 20px;
+      padding: 12px 24px;
+      font-size: 18px;
+      border-radius: 8px;
+      border: none;
+      background-color: #03a9f4;
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      transition: transform 0.2s ease;
+    }
+    button:hover {
+      transform: scale(1.05);
+    }
+    .result-box {
+      margin-top: 20px;
+      background: #333;
+      color: white;
+      padding: 15px 25px;
+      border-radius: 10px;
+      font-size: 18px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+      display: none;
+      animation: fadeIn 0.5s ease-in-out forwards;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wheel-container">
+    <div class="pointer"></div>
+    <canvas id="wheel" width="500" height="500"></canvas>
+  </div>
+  <button onclick="spinWheel()">Lancer la roue</button>
+  <div id="result" class="result-box"></div>
+
+  <audio id="tick-sound" preload="auto">
+    <source src="https://cdn.pixabay.com/download/audio/2021/08/04/audio_2c2fa7f5bb.wav?filename=pop-94319.wav" type="audio/wav">
+  </audio>
+  <audio id="win-sound" preload="auto">
+    <source src="https://cdn.pixabay.com/download/audio/2021/08/08/audio_b1e206d3eb.wav?filename=success-fanfare-trumpets-6185.wav" type="audio/wav">
+  </audio>
+
+  <script>
+    const canvas = document.getElementById('wheel');
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const center = width / 2;
+
+    const prizes = [
+      { label: '5€', color: '#f44336', weight: 1 },
+      { label: 'Jeu random Instant Gaming', color: '#e91e63', weight: 1 },
+      { label: 'Discord Nitro Classic', color: '#9c27b0', weight: 1 },
+      { label: 'Discord Nitro', color: '#03a9f4', weight: 1 },
+      { label: 'Iphone 15', color: '#ffeb3b', weight: 0 },
+    ];
+
+    const tickSound = document.getElementById('tick-sound');
+    const winSound = document.getElementById('win-sound');
+
+    const visiblePrizes = prizes.filter(p => p.weight > 0);
+    const weightedPrizes = prizes.flatMap(p => Array(p.weight).fill(p));
+    const segments = prizes.length;
+    const anglePerSegment = 2 * Math.PI / segments;
+
+    function drawWheel() {
+      for (let i = 0; i < segments; i++) {
+        ctx.beginPath();
+        ctx.moveTo(center, center);
+        ctx.fillStyle = prizes[i].color;
+        ctx.arc(center, center, center - 5, i * anglePerSegment, (i + 1) * anglePerSegment);
+        ctx.fill();
+
+        ctx.save();
+        ctx.translate(center, center);
+        ctx.rotate(i * anglePerSegment + anglePerSegment / 2);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#000';
+        ctx.font = '16px sans-serif';
+        ctx.fillText(prizes[i].label, center - 10, 0);
+        ctx.restore();
+      }
+    }
+
+    drawWheel();
+
+    let rotation = 0;
+    let spinning = false;
+    let lastSegment = -1;
+
+    function spinWheel() {
+      if (spinning) return;
+      spinning = true;
+
+      const resultBox = document.getElementById('result');
+      resultBox.style.display = 'none';
+
+      const selected = weightedPrizes[Math.floor(Math.random() * weightedPrizes.length)];
+      const visibleIndex = prizes.findIndex(p => p.label === selected.label);
+      const angleToStop = Math.PI * 2 - (visibleIndex * anglePerSegment + anglePerSegment / 2);
+      const spins = 5;
+      const totalRotation = spins * 2 * Math.PI + angleToStop;
+      const duration = 4000;
+      const start = performance.now();
+
+      function animate(time) {
+        const elapsed = time - start;
+        const progress = Math.min(elapsed / duration, 1);
+        const ease = 1 - Math.pow(1 - progress, 4);
+        rotation = ease * totalRotation;
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.save();
+        ctx.translate(center, center);
+        ctx.rotate(rotation);
+        ctx.translate(-center, -center);
+        drawWheel();
+        ctx.restore();
+
+        const currentSegment = Math.floor(((rotation + anglePerSegment / 2) % (2 * Math.PI)) / anglePerSegment);
+        if (currentSegment !== lastSegment) {
+          tickSound.currentTime = 0;
+          tickSound.play().catch(e => console.warn("Tick ignoré :", e));
+          lastSegment = currentSegment;
+        }
+
+        if (progress < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          spinning = false;
+          winSound.currentTime = 0;
+          winSound.play().catch(e => console.warn("Victoire ignorée :", e));
+          resultBox.innerText = `🎉 Résultat : ${selected.label}`;
+          resultBox.style.display = 'block';
+        }
+      }
+
+      requestAnimationFrame(animate);
+    }
+  </script>
+</body>
+</html>
